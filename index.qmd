@@ -1,0 +1,1613 @@
+---
+title: "HEPA Air Filters for Preventing Wildfire-Related Asthma Complications, a Cost-effectiveness Study"
+format:
+  html: default
+  pdf:
+    monofont: "DejaVu Sans Mono"
+    mainfont: "Times New Roman"
+  docx: default
+  elsevier-pdf:
+    monofont: "DejaVu Sans Mono"
+    mainfont: "Times New Roman"
+    keep-tex: true    
+filters:
+  - abstract-section
+editor: visual
+author:
+  - name: Amin Adibi
+    orcid: 0000-0003-2748-4781
+    email: amin.adibi@ubc.ca
+    affiliations:
+      - name: Climate Change Health Effects, Adaptation, and ResiLience (HEAL) Research Cluster, University of British Columbia 
+      - name: Respiratory Evaluation Sciences Program, Collaboration for Outcomes Research and Evaluation, Faculty of Pharmaceutical Sciences, University of British Columbia
+  - name: Prabjit Barn
+    affiliations:
+      - name: Fraser Health Authority
+  - name: Erin M. Shellington
+    affiliations:
+      - name: Climate Change Health Effects, Adaptation, and ResiLience (HEAL) Research Cluster, University of British Columbia 
+      - name: Legacy for Airway Health, Vancouver Coastal Health Research Institute
+      - name: Division of Respiratory Medicine, Faculty of Medicine, University of British Columbia
+  - name: Stephanie Harvard
+    affiliations:
+      - name: Climate Change Health Effects, Adaptation, and ResiLience (HEAL) Research Cluster, University of British Columbia 
+      - name: Respiratory Evaluation Sciences Program, Collaboration for Outcomes Research and Evaluation, Faculty of Pharmaceutical Sciences, University of British Columbia
+  - name: Kate M. Johnson (* co-senior author)
+    affiliations:
+      - name: Climate Change Health Effects, Adaptation, and ResiLience (HEAL) Research Cluster, University of British Columbia 
+      - name: Legacy for Airway Health, Vancouver Coastal Health Research Institute
+      - name: Division of Respiratory Medicine, Faculty of Medicine, University of British Columbia
+      - name: Respiratory Evaluation Sciences Program, Collaboration for Outcomes Research and Evaluation, Faculty of Pharmaceutical Sciences, University of British Columbia
+  - name: Christopher Carlsten (* co-senior author)
+    corresponding: true
+    affiliations:
+      - name: Climate Change Health Effects, Adaptation, and ResiLience (HEAL) Research Cluster, University of British Columbia 
+      - name: Legacy for Airway Health, Vancouver Coastal Health Research Institute
+      - name: Division of Respiratory Medicine, Faculty of Medicine, University of British Columbia
+      - name: Air Pollution Exposure Lab, Vancouver Coastal Health Research Institute
+date: "`r Sys.Date()`"
+bibliography: references.bib
+csl: american-journal-of-respiratory-and-critical-care-medicine.csl
+---
+
+## Lay Summary {.appendix}
+
+Wildfire smoke can increase flare up of symptoms among people living with asthma. These flare ups may require a visit to the emergency department or hospital admission. Research shows that portable HEPA air filters can significantly reduce concentrations of fine particles (PM~2.5~, an important component of wildfire smoke) in homes and other buildings. Using air filters during smoke events is a common public health recommendation. However, air filters are not accessible to everyone, with units costing anywhere between \$150 to a few hundred dollars. Does it make sense for the government of BC to offer a rebate on the cost of purchasing air filters for every person living with asthma in BC? In this study, we used historical data on wildfire smoke concentrations between 2018 to 2022, computer simulations, and health economics methods to answer this question. Our results suggest that it is likely cost-effective for the government to pay for a portion of the costs of air filters, particularly in the interior and northern interior parts of BC. We also looked at other scenarios, such as filter use only when outdoor pollution exceeds certain thresholds that typically trigger an air quality advisory. We found that a \$100 rebate was cost-effective when the air filter was used continuously, whereas a \$30 rebate was cost-effective when the air filter was turned on only during air quality advisories.
+
+## Author Contribution {.appendix}
+
+AA and CC conceptualized the study. PB conducted the literature review. SH, PB and EMS, designed and led patient and stakeholder engagement process. AA and KJ developed, coded, and populated the model. AA ran the analysis, produced results and visualizations, and developed the web app. AA, EMS, and KJ conducted interviews with knowledge users. CC provided clinical input and oversight. KJ provided health economics input and oversight. AA drafted the initial manuscript. All authors contributed to critical revision of the manuscript.
+
+# Abstract
+
+**RATIONALE:** Air pollution caused by wildfire smoke is linked to adverse health outcomes, especially for people with asthma. We studied whether government rebates for high-efficiency particulate air (HEPA) filters, which reduce smoke particles indoors, are cost-effective in managing asthma and preventing exacerbations in British Columbia (BC), Canada.
+
+**METHODS:** A Markov model analyzed health states for asthma control, exacerbation severity, and death over a retrospective time-horizon of 5 years (2018-2022). Wildfire smoke-derived particulate matter (PM2.5) from the CanOSSEM model and relevant literature informed the model. Costs and quality-adjusted life-years (QALYs) resulting from varying rebates were computed for each Health Service Delivery Area (HSDA).
+
+**RESULTS:** In the base case analysis, HEPA air filter use resulted in increased costs of \$83.34 (SE=1.03) and increased QALYs of 0.0011 (SE=0.0001) per person. Average incremental cost effectiveness ratio (ICER) among BC HSDAs was \$74,652/QALY (SE=3,517), with ICERs ranging from \$40,509 to \$89,206 per QALY in HSDAs. Across the province, the intervention was projected to prevent 4,418 exacerbations requiring systemic corticosteroids, 643 emergency department visits, and 425 hospitalizations during the 5-year time horizon. A full rebate was cost-effective in one of the 16 HSDAs across BC. The probability of cost-effectiveness ranged from 0.1% to 74.8% across HSDAs. A \$100 rebate was cost-effective in most HSDAs.
+
+**CONCLUSIONS:** Our results indicate variable cost-effectiveness of HEPA filters in managing wildfire smoke-related asthma issues. The effectiveness of government rebates varies by region, but rebates up to two-thirds of the filter cost generally appear cost-effective. This model can be applied to other interventions in diverse settings.
+
+------------------------------------------------------------------------
+
+```{r setup, message = FALSE, warning=FALSE, echo=FALSE}
+library(tidyverse)
+library(lubridate)
+library(stringr)
+library(scales) 
+#library(gghighlight)
+#library(gganimate)
+library(ggthemes)
+library(heemod)
+require(sf)
+if (!requireNamespace("ggsflabel")) 
+  remotes::install_github("yutannihilation/ggsflabel")
+
+#data_fsa <- readRDS("./data/data_fsa.rds")
+#cd       <- readRDS("./data/cd.rds")
+#ha       <- readRDS("./data/ha.rds")
+daily_hsda     <- readRDS("./data/daily_hsda_lean_2018_2022.rds") %>%
+  rename(date=date_val) %>%
+  filter(date>=ymd("2018-01-01"))
+
+
+```
+
+```{r imputingMissingValues, message = FALSE, warning=FALSE, echo=FALSE}
+# handling missing values
+
+alldays <- tibble(
+  date=seq(ymd("2018-01-01"), ymd("2022-12-31"), by="1 day"))
+
+allHSDAs <- daily_hsda %>% select(HLTH_SERVICE_DLVR_AREA_CODE) %>% distinct()
+
+alldaysHSDA <- alldays %>% cross_join(allHSDAs)
+
+daily_hsda <- daily_hsda %>% 
+  right_join(alldaysHSDA, by=c("date"="date", "HLTH_SERVICE_DLVR_AREA_CODE"="HLTH_SERVICE_DLVR_AREA_CODE")) %>%
+  ungroup() %>% 
+  arrange(HLTH_SERVICE_DLVR_AREA_CODE, date) %>% 
+  group_by(HLTH_SERVICE_DLVR_AREA_CODE, week(date)) %>%
+  mutate(across(smoke, ~replace_na(., mean(., na.rm=TRUE)))) %>%
+  ungroup()
+
+```
+
+```{r checkMissingDates,  message = TRUE, warning=TRUE, echo=FALSE}
+# Now counting data points per year
+smoke_day_counts <- daily_hsda %>% group_by(HLTH_SERVICE_DLVR_AREA_CODE, year(date)) %>% count() %>% ungroup()
+countMissing <- smoke_day_counts %>% filter(n<365) %>% count()
+
+if (countMissing>0) {stop("Some calendar days are missing")}
+
+countNA <- sum(as.numeric(map(daily_hsda, ~sum(is.na(.)))))
+if (countNA>0) {stop("NAs found in data")}
+
+```
+
+```{r addingSpatialData, message = FALSE, warning=TRUE, echo=FALSE}
+# Now merging with map:
+hsda <- daily_hsda %>% left_join(bcmaps::health_hsda(), by="HLTH_SERVICE_DLVR_AREA_CODE")
+```
+
+# Background
+
+The number, size, and intensity of wildfires in Canada have increased, particularly in the western province of British Columbia (BC) with the number of days with uncontrolled wildfire in BC expected to double or triple by 2100[@wotton2017]. <!--# Climate change-related factors, including warmer temperatures and drier conditions contributed to the particularly devastating 2017 fire season where seven to eleven times more land was burned than the years before [@kirchmeier-young2019] -->
+
+Wildfire smoke is composed of several pollutants, including fine particulate matter with diameters of 2.5 microns and smaller (PM~2.5~). PM~2.5~ and other air pollutants have been associated with increased respiratory symptoms, hospitalizations, and other adverse health effects in individuals with asthma [@reid2016].
+
+People living with asthma are particularly susceptible to air pollution. Asthma exacerbations (also known as *flare-ups* or *acute severe asthma*) are episodes characterized by progressive worsening of cough, wheezing, shortness of breath and decrease in lung function [@globalinitiativeforasthma2022]. Severe exacerbations can be fatal and can occur even in patients with well-controlled asthma [@globalinitiativeforasthma2022]. Previous studies have shown that PM~2.5~ from wildfire events can increase the risk of asthma exacerbations [@borchers_arriagada_association_2019].
+
+During wildfire smoke events, indoor PM~2.5~ concentrations increase as smoke infiltrates into homes and other buildings. Because people typically spend \>70% of their time in indoor environments, [@statisticscanadageneralsocialsurvey] indoor air quality is an important contributor to total air pollution exposure. Consequently, interventions that improve indoor air quality are important to protecting health, particularly during episodes of poor air quality, such as during wildfire smoke events. Portable high-efficiency particulate air (HEPA) filters can reduce indoor concentrations of PM~2.5~[@zhu2021]. These units work by drawing air across a highly efficient filter that traps particles, including PM~2.5~, and release filtered air. HEPA and other filters can be portable, or be part of a buildings heating, ventilation, and air conditioning (HVAC) system, and often referred to induct filters.
+
+As the climate emergency worsens and continues to impact air quality[@kirchmeier-young2019], there is growing consensus among the public health community that using air filters in indoor settings is an important health-protective intervention, particularly for vulnerable people. The Government of Canada currently provides tax benefits for the full cost of an air filter, cleaner, or purifier and up to \$1000 for the purchase of an air conditioner for patients living with a chronic disease who have a prescription for these devices [@canadarevenueagency2016]. In 2021, the Canadian Government also announced a 25% tax credit for small businesses to upgrade their ventilation systems and purchase portable HEPA air filters [@departmentoffinancegovernmentofcanada2021]. In BC, the First Nations Health Authority (FNHA) provides portable air filters to communities affected by wildfires [@firstnationshealthauthority2022]. We are also aware of two similar programs in the US: an air filter distribution program for low-income asthma patients by the Bay Area Air Quality and Management District [@thebayareaairqualityandmanagementdistrict2021], and a HEPA filter loaner program by the Forest Stewards Guild in Santa Fe [@participant2020]. However, we are not aware of any formal analysis evaluating the cost-effectiveness of these programs from a health economics perspective.
+
+In this study, we used a decision-analytic model to evaluate the cost-effectiveness of a government-sponsored portable HEPA air filters rebate program for improving asthma control and preventing asthma exacerbations caused by wildfire events in BC, Canada. Our analysis can serve as a blueprint for evaluating similar climate change adaptation strategies in BC and elsewhere.
+
+# Methods
+
+We have reported the results of this study according to the recommendations and best practices set forth in the Consolidated Health Economic Evaluation Reporting Standards 2022 (CHEERS 2022) statement [@husereau2022].
+
+Based on discussions with policy makers and knowledge users in BC, we chose Health Serivce Delivery Area (HSDA) as the geographical unit of analysis. Our base case analysis assumes that the provincial government will offer a 100% rebate for portable HEPA air filters to all individuals diagnosed with asthma in BC. We used a retrospective time horizon of five years beginning in 2018 to the end of 2022, which was the most recent 5-year time horizon for which the data were available. This retrospective time horizon was necessary as daily projections of future wildfire PM~2.5~ concentrations are not available. We assumed patients on average spent 69.6% of their time at home (and thus could benefit from the air filter for the proportion of time they were at home), based on the time use information collected in Statistics Canada's General Social Survey [@statisticscanadageneralsocialsurvey]. The target population was BC residents diagnosed with asthma with a starting age of 42 (the average age of BC residents)[@governmentofcanada2017].
+
+We projected costs in 2023 Canadian dollars and effects as Quality-Adjusted Life Years (QALYs) for patients with and without portable HEPA air filters in their homes, and report results for each Health Service Delivery Area (HSDA) in BC. We also report the number of averted cases of asthma exacerbations using model-projected exacerbation rates and crude asthma prevalence levels from April 1st, 2020 to March 31st, 2021 for each HSDA obtained from BCCDC[@britishcolumbiaministryofhealth]. We calculated Incremental Cost-effectiveness Ratios (ICER) and Net-Monetary Benefit (NMB) and reported cost-effectiveness at willingness-to-pay (WTP) threshold of \$50,000/QALY.
+
+The analysis was conducted from the healthcare payer perspective, with an annual discounting of 1.5% applied to costs and effects.
+
+## Stakeholder engagement
+
+We developed a health economic analysis plan with early and ongoing input from stakeholders, including two patient partners living with asthma, two medical health officers, an environment health officer, and a policy analyst (see Acknowledgment section).
+
+## Model development
+
+We developed a time-varying Markov model with seven health states corresponding to well-controlled asthma, partly-controlled asthflma, and uncontrolled asthma (as defined per Global Initiative for Asthma (GINA) 2023 [@globalinitiativeforasthma2022]) as well as exacerbations requiring either systemic corticosteroids (ExacSCS), a visit to the Emergency Department (ExacED), or hospitalization (ExacHosp), and death, respectively (@fig-markov).
+
+Background mortality was based on age-specific life tables for BC from Statistics Canada [@statisticscanada2022]. Mortality due to asthma exacerbations of each severity was based on a national review of asthma deaths in the UK [@watson2007; @levy2014asthma]. Annual transition probabilities between asthma control states were based on an original analysis of Economic Burden of Asthma study where we calculated the proportion of transitions occurring between each control state over 5 visits conducted over 1 year of follow-up [@sadatsafavi2015]. Rates of severe exacerbations leading to SCS, ED, or hospitalization were obtained from SYGMA II study[@bateman2018]. We applied a risk ratio of 1.40 to individuals with partially controlled and uncontrolled asthma to reflect their higher probability of exacerbations. This parameter was based on an analysis of commercially insured patients in the US[@pollack2022].
+
+We ran the model using daily time cycles.
+
+![Markov health states and transitions. WellCtrlAsthma = Well-controlled asthma; UnCtrlAsthma = Uncontrolled Asthma; Exac-SCS = Exacerbations requiring either systemic corticosteroids; ExacER = Exacerbation requiring a visit to the emergency department; ExacHosp = Exacerbations requiring hospitalization.](markov.png){#fig-markov}
+
+## Air Pollution Exposure
+
+Average daily outdoor PM~2.5~ concentrations were obtained from CanOSSEM [@PAUL2022157956], a random forest machine learning model developed and validated by BC Center for Disease Control that projects retrospective average daily wildfire smoke levels for each postal code in BC. Outdoor PM~2.5~ concentrations in HSDAs were obtained by linking postal codes to HSDAs using Postal Code Conversion File Plus (PCCF+) Version 7E[@AB2/D1AO5H_2022]. Model assumptions are listed in @tbl-assumptions.
+
+Risk ratios for the effect of increased exposure to PM~2.5~ on asthma outcomes, including salbutamol dispensation and asthma-related physician visit, ED visit, and hospitalizations were obtained from a recent meta-analysis[@borchers_arriagada_association_2019] and a model validation study based on BC administrative health data [@yao2014].
+
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Assumptions for base case analysis                                                                                                                                                                                                                             |
++================================================================================================================================================================================================================================================================+
+| HEPA air filters were assumed to operate continuously on their highest setting during the model time horizon.                                                                                                                                                  |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| We assumed that the government could offer rebates at a discount of 30% of the purchase cost compared to the advertised retail price.                                                                                                                          |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| We assumed that HEPA filters will need to be replaced every 9 months of use based on the average manufacturer-recommended timeline, while the filtration unit will need to be replaced every five years regardless of how much it was used.                    |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Residents were assumed to cover the cost of electricity and filter replacement.                                                                                                                                                                                |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| We assumed that people living with asthma received one HEPA air filter unit each, even if there were multiple people with asthma in the same home. We assumed that air filters were placed in the main living space or main bedroom of the person with asthma. |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| We assumed people living with asthma spent the same proportion of their day at home as the general population.                                                                                                                                                 |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Increased salbutamol dispensation (per canister) per 10 µg/m³ increase in PM~2.5~ during wildfire events was used as a proxy for risk of worsened asthma control (ie. well controlled to partly controlled, or partly controlled to uncontrolled).             |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Potential additional benefits of HEPA air filters in reducing exposure to allergens, pathogens, and indoor sources of PM~2.5~ such as cooking or wood stoves were not considered.                                                                              |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| We assumed all patients would enter the "uncontrolled asthma" health state after an exacerbation event.                                                                                                                                                        |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Historical wildfire-related PM~2.5~ levels projected by the CanOSSEM model were assumed to be accurate.                                                                                                                                                        |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+: Model assumptions for evaluating cost-effectiveness of a portable air filter rebate program to prevent asthma exacerbations {#tbl-assumptions}
+
+Transition probabilities, utility and disutility values, rate ratios for the effect of increased PM~2.5~ pollution on asthma outcomes, healthcare state costs, outdoor to indoor PM~2.5~ infiltration rates, and HEPA filter efficiency rate were obtained from the literature (@tbl-parameters).
+
+## HEPA Air Filter Effectiveness
+
+We chose what we considered to be a *typical* HEPA air filter unit with a clean air delivery rate (CADR) of 105 cfm for smoke, and a nominal air exchange rate of 4.8/hr for a coverage area of 15 m^2^. Measured HEPA filter efficiency of 0.31 (defined as the ratio of indoor PM~2.5~ measured throughout the year with HEPA to without HEPA filter) was obtained from a study led by one of our co-authors that evaluated air filter effectiveness in BC homes during smoke events [@Barn2008] using a comparable air filter unit with a CADR of 150 cfm and nominal air exchange rate of 6/hr for a coverage area of 17.37 m^2^ (@tbl-parameters). Varying filter effectiveness values of (±20%) were explored in one-way sensitivity analysis.
+
+## Costs
+
+Costs included the initial purchase price of the HEPA air filter unit, background healthcare costs based on asthma control level, and unit costs of exacerbations obtained from the literature. Unit costs and utilization were obtained from previous studies[@sadatsafavi2021; @bateman2018].
+
+Costs to patients for air filter operation such as electricity and replacement HEPA filters after every 9 months of use (based average replacement duration according to the manufacturer) were not included in the base case analysis, but are reported in scenario analysis.
+
+## Health State Utilities
+
+Health state utilities were derived from the literature based on levels of asthma control, while severe exacerbations requiring systemic SCS, ED visit, or hospitalization were associated with a one-time disutility value derived from EQ-5D questionnaires [@lloyd2007].
+
+## Sensitivity Analyses
+
+One-way deterministic sensitivity analysis was used to explore the effect of changing assumptions on the estimated costs and QALYs. Uncertainty in the results due to parameter uncertainty was explored through probabilistic sensitivity analysis with 1000 sampling from parameters distributions (@tbl-parameters) in each HSDA.
+
+Our base case scenario assumed that the government covered the full cost of the air filter and that air filters were operating continuously throughout the five years of study. Here, we explore three different scenarios: 1) the government pays a \$100 (67%) rebate, 2) the government pays a full (100%) rebate and air filters are turned on only when the outdoor pollution exceeds certain thresholds, and 3) the government pays a \$30 (20%) rebate and the air filter operates only when outdoor PM~2.5~ concentration is above a certain threshold. We chose rebate amounts based on convenience and existing provincial rebate programs (e.g. for energy efficient products [@bchydro]).
+
+## Software
+
+Data preparation, model development, and statistical analysis was performed in R v4.3.1 using the *heemod* package v0.15.1 [@filipovic-pierucci2016]. We used Quarto v1.4.320 to create a reproducible manuscript and used version control to keep track of methodological decisions and changes to the model. Model code is publicly available at [https://github.com/resplab/hepa_wildfire_CE_code](#0).
+
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| **Parameter**                                                                                         | **Base case**       | **DSA**      | **PSA**           | **Source**                               |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Age at start                                                                                          | 42                  | 33\|67       |                   | [@governmentofcanada2017]                |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Mean infiltration efficiency without HEPA                                                             | 61%                 |              | Normal (SD=0.27)  | [@Barn2008]                              |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Mean infiltration efficiency with HEPA                                                                | 19%                 |              | Normal (SD=0.20)  | [@Barn2008]                              |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Filter Effect                                                                                         | 31%                 | ±20%         | Beta              | [@Barn2008; @zhu2021]                    |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Risk ratio for increased salbutamol dispensation per 10 µg/m³ increase in PM~2.5~                     | 1.04 \[1.03-1.06\]  | 1\|1.20      | Lognormal         | [@yao2014]                               |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Risk ratio for increased physician visit for asthma per 10 µg/m³ increase in PM~2.5~                  | 1.06 \[1.04--1.08\] | 1\|1.20      | Lognormal         | [@yao2014]                               |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Risk ratio for asthma related ED visit per 10 µg/m³ increase in PM~2.5~                               | 1.07 \[1.04--1.09\] | 1\|1.20      | Lognormal         | [@borchers_arriagada_association_2019]   |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Risk ratio for asthma related hospitalization per 10 µg/m³ increase in PM~2.5~                        | 1.06 (1.02--1.09)   | 1\|1.20      | Lognormal         | [@borchers_arriagada_association_2019]   |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Probabilities[^1]                                                                                     |                     |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Risk of death due to exacerbation (SCS)                                                               | 0.0267%             |              | Beta              | [@watson2007; @levy2014asthma]           |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Risk of death due to exacerbation (ED)                                                                | 0.1733%             |              | Beta              | [@watson2007; @levy2014asthma]           |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Risk of death due to exacerbation (hospitalization)                                                   | 0.1801%             |              | Beta              | [@watson2007; @roberts2013]              |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Well-controlled to uncontrolled asthma, monthly                                                       | 1.30%               |              | Beta              | [@sadatsafavi2015]                       |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Well-controlled to partly-controlled, monthly                                                         | 13.03%              |              | Beta              | [@sadatsafavi2015]                       |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Partly-controlled to well-controlled, monthly                                                         | 10.07%              |              | Beta              | [@sadatsafavi2015]                       |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Partly-controlled to uncontrolled, monthly                                                            | 9.04%               |              | Beta              | [@sadatsafavi2015]                       |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Uncontrolled to partly controlled, monthly                                                            | 12.27%              |              | Beta              | [@sadatsafavi2015]                       |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Uncontrolled to well-controlled asthma, monthly                                                       | 3.95%               |              | Beta              | [@sadatsafavi2015]                       |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Annual rate of exacerbation (SCS) in controlled asthma                                                | 0.0895              |              | Beta              | [@bateman2018; @pollack2022]             |
+|                                                                                                       |                     |              |                   |                                          |
+|                                                                                                       | p=8.55%[^2]         |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Annual rate of exacerbation (ED) in controlled asthma                                                 | 0.0111              |              | Beta              | [@bateman2018; @pollack2022]             |
+|                                                                                                       |                     |              |                   |                                          |
+|                                                                                                       | p=1.11%[^3]         |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Annual rate of exacerbation (hospitalization) in controlled asthma                                    | 0.0086              |              | Beta              | [@bateman2018; @pollack2022]             |
+|                                                                                                       |                     |              |                   |                                          |
+|                                                                                                       | p=0.85%[^4]         |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Risk Ratio for exacerbations (SCS, ED, or hospitalization) in uncontrolled asthma vs. well-controlled | 1.1127[^5]\         | ±20%         | Lognormal         | [@pollack2022]                           |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Risk Ratio for exacerbations in partly controlled asthma vs. well-controlled                          | 1.0352[^6]          | ±20%         | Lognormal         | [@pollack2022]                           |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Exacerbation (SCS, ED, or hospitalization) to uncontrolled asthma                                     | 1-p_mortality       |              | Fixed             |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+|                                                                                                       |                     |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| **Exposures**                                                                                         |                     |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Monthly PM~2.5~ levels (either as average for each postal code                                        | \                   |              | Fixed             | @PAUL2022157956                          |
+|                                                                                                       | CanOSSEM            |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+|                                                                                                       |                     |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| **Unit Costs**                                                                                        |                     |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| HEPA air filter unit                                                                                  | \$150               | ±20%         | Gamma             | Retail Price                             |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| government discount on retail price                                                                   | 30%                 |              | Assumption        |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Indoor HEPA air filter electricity usage, annually (when used continuously)                           | \$9.90\             | Fixed        | Fixed             | BC Hydro Calculator [^7]                 |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Filter Replacement, per replacement                                                                   | \$30\               | ±20%         | Gamma             | Retail Price                             |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Direct costs of well-controlled asthma, monthly                                                       | \$323.57            | ±20%         | Normal (SD=59.50) | [@yaghoubi2020]                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Direct costs of partly controlled asthma, monthly                                                     | \$404.46            | ±20%         | Normal (SD=27.41) | [@yaghoubi2020]                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Direct costs of uncontrolled asthma, monthly                                                          | \$426.56            | ±20%         | Normal (SD=34.82) | [@yaghoubi2020]                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Exacerbation - SCS                                                                                    | \$181.71            | \$138\|      | Gamma             | [@sadatsafavi2021]                       |
+|                                                                                                       |                     |              |                   |                                          |
+|                                                                                                       |                     | \$208        |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Exacerbation - ED visit                                                                               | \$574.88            | \$438\|      | Gamma             | [@sadatsafavi2021]                       |
+|                                                                                                       |                     |              |                   |                                          |
+|                                                                                                       |                     | \$657        |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Exacerbation - hospitalization stay unit                                                              | \$11,009.89         | \$8389\|     | Gamma             | [@sadatsafavi2021]                       |
+|                                                                                                       |                     |              |                   |                                          |
+|                                                                                                       |                     | \$12583      |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+|                                                                                                       |                     |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| **Utilities**                                                                                         |                     |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Utility of controlled asthma, daily                                                                   | $\frac{0.70}{365}$  | ±20%         | Beta              | [@yaghoubi2020]                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Utility of partly controlled asthma, daily                                                            | $\frac{0.66}{365}$  | ±20%         | Beta              | [@yaghoubi2020]                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Utility of uncontrolled asthma, daily                                                                 | $\frac{0.61}{365}$  | ±20%         | Beta              | [@yaghoubi2020]                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Disutility of exacerbations (SCS), per event                                                          | 0.0057              | -0.08\|-0.12 | Normal (SD=0.01)  | [@lloyd2007]                             |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Disutility of exacerbations (ER visit), per event                                                     | 0.00745             | -0.12\|-0.18 | Normal (SD=0.015) | assumption                               |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Disutility of exacerbations (Hospitalization), per event                                              | 0.0092              | -0.16\|-0.24 | Normal (SD=0.02)  | [@lloyd2007]                             |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+|                                                                                                       |                     |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| **Other Parameters**                                                                                  |                     |              |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Proportion of time spent at home                                                                      | 69.6%               |              | Fixed             | [@statisticscanadageneralsocialsurvey]   |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Discounting (annual)                                                                                  | 1.5%                | 0%\|5%       |                   |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| Air filter unit lifespan, years                                                                       | 5                   |              | Fixed             |                                          |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+| HEPA Filter lifespan, months                                                                          | 9                   |              | Fixed             | Average of 6-12 months, per manufacturer |
++-------------------------------------------------------------------------------------------------------+---------------------+--------------+-------------------+------------------------------------------+
+
+: Model Parameters {#tbl-parameters}
+
+[^1]: Annual and monthly probabilities were converted rescaled to daily probabilities using $p_m=1-(1-p)^{(1/n)}$
+
+[^2]: Per Table 1 in Bateman et al. [@bateman2018], 45.9% of patients had uncontrolled asthma, while 54.1% had controlled asthma. Per [@bateman2018] the overall annual rate of exacerbations (SCS) was 209/1998. We combined this information with risk ratios for asthma control level and exacerbations from [@pollack2022], which reported mean annual exacerbation rates of 1.60, 1.75, and 2.19 for patients with well-controlled, partly-controlled, and uncontrolled asthma, respectively, to solve for the annual exacerbation risks for those with well controlled asthma: $0.541 \times R_{exacSCS-wellCtrl}+0.459 \times R_{exacSCS-wellCtrl} \times1.36875 = \frac{209}{1998}$ so $R_{exacSCS-wellCtrl} \approx 0.0894625$
+
+[^3]: Per Table 1 in Bateman et al. [@bateman2018], 45.9% of patients had uncontrolled asthma, while 54.1% had controlled asthma. Per [@bateman2018] the overall annual rate of exacerbations (ED) was 26/1998. We combined this information with risk ratios for asthma control level and exacerbations from [@pollack2022], which reported mean annual exacerbation rates of 1.60, 1.75, and 2.19 for patients with well-controlled, partly-controlled, and uncontrolled asthma, respectively, to solve for the annual exacerbation risks for those with controlled asthma: $0.541 \times R_{exacED-wellCtrl}+0.459 \times R_{exacED-wellCtrl} \times1.36875 = \frac{26}{1998}$ so $R_{exacED-wellCtrl} \approx 0.0111293$
+
+[^4]: Per Table 1 in Bateman et al. [@bateman2018], 45.9% of patients had uncontrolled asthma, while 54.1% had controlled asthma. Per [@bateman2018] the overall annual rate of exacerbations (SCS) was 20/1998. We combined this information with risk ratios for asthma control level and exacerbations from [@pollack2022], which reported mean annual exacerbation rates of 1.60, 1.75, and 2.19 for patients with well-controlled, partly-controlled, and uncontrolled asthma, respectively, to solve for the annual exacerbation risks for those with controlled asthma: $0.541 \times R_{exacHosp-wellCtrl}+0.459 \times R_{exacHosp-wellCtrl} \times1.36875 = \frac{20}{1998}$ so $R_{exacHosp-wellCtrl} \approx 0.00856101$
+
+[^5]: Calculated from reported rates for exacerbation. Rates of 2.19 and 1.6 for exacerbations in poorly-controlled and well-controlled asthma patients were converted to risk probabilities of 0.8881 and 0.7981, respectively.
+
+[^6]: Calculated from reported rates for exacerbation. Rates of 1.75 and 1.6 for exacerbations in partly-controlled and well-controlled asthma patients were converted to risk probabilities of 0.8881 and 0.8262, respectively.
+
+[^7]: Calculations are based on Blue Pure 411 Auto running at highest setting (10W) for 24 hours every day for a year (87.60 kWh) at an average residential rate of 11.30 cents per kWh (a blend of step 1 and step 2 rates). For more info, see https://www.bchydro.com/powersmart/residential/tools-and-calculators/cost-calculator.html
+
+1 USD (2018) = 1.6370 CAD (2023). Note: USD costs were converted to CAD using a currency exchange ratio of 1 USD = 1.365 CAD, and a consumer price index of 132.5 for February 2018 and 154.5 for February 2023.
+
+# Results
+
+Average daily wildfire-related smoke concentration ranged from 2.5 μg/m^3^ (2019-09-25, Northeast) to 410.6 μg/m^3^ (2018-08-19, Kootenay Boundary). Significant year-to-year variability was observed among all HSDAs, with higher smoke concentration during years with more wildfire activity in the Interior and Northern Health regions as shown in @fig-smoke.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#| label: fig-smoke
+#| fig-cap: Daily Smoke Exposure Levels (PM2.5) across BC
+ha_line <-
+ggplot(hsda) + 
+geom_line(aes(x=date, y=smoke, colour=HLTH_SERVICE_DLVR_AREA_NAME), linewidth=0.5) +
+scale_x_date(date_labels = "%m-%Y", 
+             date_breaks = "9 month") +
+  theme_few(base_size = 8) +
+  theme(axis.text.x=element_text(angle=90,hjust=1), 
+        legend.position="none") +
+  facet_wrap(~HLTH_SERVICE_DLVR_AREA_NAME) +
+#  ggtitle("Smoke Exposure Levels (PM2.5) across BC") + 
+  xlab("") + ylab("µg/m³")
+
+ha_line
+  
+#ggplotly(cd_line)
+```
+
+```{r numberofdays, echo=FALSE, warning=FALSE, message=FALSE, eval=FALSE}
+
+
+
+# ggplot(smoke_days, aes(x=yearMonth, y=n_smoky_days, colour=HLTH_SERVICE_DLVR_AREA_NAME)) +
+#   geom_line( position = "dodge") 
+```
+
+## Base Case Cost-Effectiveness
+
+```{r modelSetup, warning=FALSE, message=FALSE, echo=FALSE, include=FALSE}
+#| echo: false
+
+states <- c("asthma", "partCtrlAsthma", "unctrlAsthma","sevExac_SCS","sevExac_ER","sevExac_hosp",  "death")
+smoke <- sf::st_drop_geometry(hsda) %>% select(HLTH_SERVICE_DLVR_AREA_NAME, date, smoke) 
+
+ mort <- read_csv("./data/1310083701_databaseLoadingData.csv") %>% #BC life
+   mutate(ageGroup=str_remove(`Age group`, " year")) %>%
+   mutate(ageGroup=str_remove(ageGroup, "s")) %>% 
+   mutate(ageGroup=str_remove(ageGroup, " and over")) %>% 
+   mutate(ageGroup=as.numeric(ageGroup))
+
+
+smokeLevel <- function(modelDate, hsdaName, smoke) {
+  smoke <- as_tibble(smoke) %>%
+  filter(HLTH_SERVICE_DLVR_AREA_NAME%in%hsdaName)
+  #print(modelDate) #for debug
+  res <- smoke %>% filter(date %in% ymd(modelDate))
+  return(res$smoke/10) #per 10 ug/m3
+}
+
+ mrBC <- function(age) { 
+   modelYear <- 2020 #average year
+   res <- (mort%>%
+             filter(ageGroup%in%age) %>% 
+             filter(REF_DATE%in%modelYear))$VALUE #bc-specific
+   return(res)
+ }
+
+
+monthly <- function(mn){
+  res <- numbers::mod(mn,12)
+  return(replace(res, res==0, 12))
+}
+
+isFilterOn <- function(modelDate, hsdaName, smoke, pm_threshold) {
+  pm2_5 <- smokeLevel (modelDate, hsdaName, smoke)*10
+  res <- as.numeric(pm2_5>=pm_threshold)
+  return(res)
+}
+
+# setting initial values based on EBA
+time0 <- define_init(asthma = 0.2443366*100000L,
+            partCtrlAsthma  = 0.4029126*100000L,
+            unctrlAsthma    = 0.3527508*100000L,
+            sevExac_SCS     = 0L,
+            sevExac_ER      = 0L,
+            sevExac_hosp    = 0L,
+            death           = 0L)
+
+mat_normal <- define_transition( 
+  C, p_well_part_ctrl*smoke_salbu, p_well_unctrl *smoke_salbu,  p_well_sev_exac_scs*smoke_SCS, p_well_sev_exac_ed *smoke_ER, p_well_sev_exac_hosp *smoke_hosp, mr, 
+  p_part_ctrl_well , C, p_part_ctrl_unctrl*smoke_salbu, rr_sev_exac_part_ctrl*  p_well_sev_exac_scs*smoke_SCS,rr_sev_exac_part_ctrl*p_well_sev_exac_ed *smoke_ER, rr_sev_exac_part_ctrl*p_well_sev_exac_hosp *smoke_hosp, mr, 
+  p_unctrl_well, p_unctrl_part_ctrl, C, rr_sev_exac_unctrl*  p_well_sev_exac_scs*smoke_SCS, rr_sev_exac_unctrl*p_well_sev_exac_ed *smoke_ER, rr_sev_exac_unctrl*p_well_sev_exac_hosp *smoke_hosp, mr,
+  0,    0,    C,    0,     0,    0,     p_death_sev_exac_scs+mr,
+  0,    0,    C,    0,     0,    0,     p_death_sev_exac_ed+mr,
+  0,    0,    C,    0,     0,    0,     p_death_sev_exac_hosp+mr,
+  0,    0,    0,    0,     0,    0,     1,
+  state_names = states
+)
+
+
+mat_normal
+
+plot(mat_normal)
+
+
+mat_hepa <- define_transition( 
+  C, p_well_part_ctrl*smoke_salbu_hepa, p_well_unctrl *smoke_salbu_hepa,   p_well_sev_exac_scs*smoke_SCS_hepa,   p_well_sev_exac_ed *smoke_ER_hepa, p_well_sev_exac_hosp *smoke_hosp_hepa, mr, 
+  p_part_ctrl_well , C, p_part_ctrl_unctrl*smoke_salbu_hepa, rr_sev_exac_part_ctrl*  p_well_sev_exac_scs*smoke_SCS_hepa,  rr_sev_exac_part_ctrl*p_well_sev_exac_ed *smoke_ER_hepa, rr_sev_exac_part_ctrl*p_well_sev_exac_hosp *smoke_hosp_hepa, mr, 
+  p_unctrl_well, p_unctrl_part_ctrl, C,    rr_sev_exac_unctrl*  p_well_sev_exac_scs*smoke_SCS_hepa,   rr_sev_exac_unctrl*p_well_sev_exac_ed *smoke_ER_hepa, rr_sev_exac_unctrl*p_well_sev_exac_hosp *smoke_hosp_hepa, mr,
+  0,    0,    C,    0,     0,    0,    p_death_sev_exac_scs+mr,
+  0,    0,    C,    0,     0,    0,    p_death_sev_exac_ed+mr,
+  0,    0,    C,    0,     0,    0,    p_death_sev_exac_hosp+mr,
+  0,    0,    0,    0,     0,    0,     1,
+  state_names = states
+)
+
+plot(mat_hepa)
+```
+
+```{r states, warning=FALSE, message=FALSE, echo=FALSE, include=FALSE}
+#| echo: false
+
+state_asthma <- define_state(
+  cost_health = discount(0, r_discount),
+  cost_drugs  = discount(c_asthma_well, r_discount),
+  cost_total  = cost_health + cost_drugs,
+  life_year   = discount(u_asthma_well, r_discount)
+)
+
+state_partCtrlAsthma <- define_state(
+  cost_health = discount(0, r_discount), 
+  cost_drugs  = discount(c_asthma_part_ctrl , r_discount),
+  cost_total  = cost_drugs + cost_health,
+  life_year   = discount(u_asthma_part_ctrl, r_discount)
+)
+
+state_unctrlAsthma <- define_state(
+  cost_health = discount(0, r_discount), 
+  cost_drugs  = discount(c_asthma_unctrl, r_discount),
+  cost_total  = cost_drugs + cost_health,
+  life_year   = discount(u_asthma_unctrl, r_discount)
+)
+
+state_sevExac_SCS <- define_state(
+  cost_health = discount(c_exac_scs, r_discount), 
+  cost_drugs  = discount(0, r_discount),
+  cost_total  = cost_drugs + cost_health,
+  life_year   = discount(du_exac_scs, r_discount)
+)
+
+state_sevExac_ER <- define_state(
+  cost_health = discount(c_exac_er, r_discount), 
+  cost_drugs  = discount(0, r_discount),
+  cost_total  = cost_drugs + cost_health,
+  life_year   = discount(du_exac_er, r_discount)
+)
+
+state_sevExac_hosp <- define_state(
+  cost_health = discount(c_exac_hosp, r_discount), 
+  cost_drugs  = discount(0, r_discount),
+  cost_total  = cost_drugs + cost_health,
+  life_year   = discount(du_exac_hosp, r_discount)
+)
+
+state_death <- define_state(
+  cost_health = 0,
+  cost_drugs  = 0,
+  cost_total  = 0,
+  life_year   = 0
+)
+
+state_asthma_hepa <- define_state(
+  cost_health = discount(0, r_discount),
+  cost_drugs  = discount(c_asthma_well, r_discount),
+  cost_total  = cost_health + cost_drugs + c_hepa,
+#    isFilterOn(modelDate, hsdaName, smoke, pm_threshold)*c_hepa,
+  life_year   = discount(u_asthma_well, r_discount)
+)
+
+state_partCtrlAsthma_hepa <- define_state(
+  cost_health = discount(0, r_discount), 
+  cost_drugs  = discount(c_asthma_part_ctrl , r_discount),
+  cost_total  = cost_drugs + cost_health + c_hepa,
+#    isFilterOn(modelDate, hsdaName, smoke, pm_threshold)*c_hepa,
+  life_year   = discount(u_asthma_part_ctrl, r_discount)
+)
+
+state_unctrlAsthma_hepa <- define_state(
+  cost_health = discount(0, r_discount), 
+  cost_drugs  = discount(c_asthma_unctrl, r_discount),
+  cost_total  = cost_drugs + cost_health + c_hepa,
+#    isFilterOn(modelDate, hsdaName, smoke, pm_threshold)*c_hepa,
+  life_year   = discount(u_asthma_unctrl, r_discount)
+)
+
+state_sevExac_SCS_hepa <- define_state(
+  cost_health = discount(c_exac_scs, r_discount), 
+  cost_drugs  = discount(0, r_discount),
+  cost_total  = cost_drugs + cost_health + c_hepa,
+#    isFilterOn(modelDate, hsdaName, smoke, pm_threshold)*c_hepa,
+  life_year   = discount(du_exac_scs, r_discount)
+)
+
+state_sevExac_ER_hepa <- define_state(
+  cost_health = discount(c_exac_er, r_discount), 
+  cost_drugs  = discount(0, r_discount),
+  cost_total  = cost_drugs + cost_health + c_hepa,
+  life_year   = discount(du_exac_er, r_discount)
+)
+
+state_sevExac_hosp_hepa <- define_state(
+  cost_health = discount(c_exac_hosp, r_discount), 
+  cost_drugs  = discount(0, r_discount),
+  cost_total  = cost_drugs + cost_health + c_hepa,
+  life_year   = discount(du_exac_hosp, r_discount)
+)
+
+strat_normal <- define_strategy(
+  transition     = mat_normal,
+  asthma         = state_asthma,
+  partCtrlAsthma = state_partCtrlAsthma,
+  unctrlAsthma   = state_unctrlAsthma,
+  sevExac_SCS    = state_sevExac_SCS,
+  sevExac_ER     = state_sevExac_ER,
+  sevExac_hosp   = state_sevExac_hosp,
+  death          = state_death
+)
+
+strat_hepa <- define_strategy(
+  transition     = mat_hepa,
+  asthma         = state_asthma_hepa,
+  partCtrlAsthma = state_partCtrlAsthma_hepa,
+  unctrlAsthma   = state_unctrlAsthma_hepa,
+  sevExac_SCS    = state_sevExac_SCS_hepa,
+  sevExac_ER     = state_sevExac_ER_hepa,
+  sevExac_hosp   = state_sevExac_hosp_hepa,
+  death          = state_death,
+  starting_values = define_starting_values(
+  cost_total      = c_hepa_unit_list_price*0.7
+  )
+)
+
+```
+
+```{r, message=FALSE, cache=TRUE, echo=FALSE, warning=F}
+
+ hepaICER <- function(hsdaName, 
+                      yr, 
+                      smoke,
+                      startingMonth=1, 
+                      totalCycles=365*5,
+                      pm_threshold, 
+                      rebate=NULL,
+                      dsa=FALSE,
+                      psa=FALSE,
+                      samplingPSA=1000,
+                      cores=4) {
+   
+  #message(paste0("Calculating for ", cdName))
+  message("pm_threshold is set at ", pm_threshold)
+
+  param <- define_parameters(
+    #age
+  hsdaName = hsdaName, 
+  age_init = 42,
+  age = age_init + round(markov_cycle/365), 
+  r_discount = 0.015/365,
+  
+  infiltration = 0.61,#Barn et al. 2009
+#  filter_effect = 1-0.52,#Zhu et al 2021
+  prop_time_at_home = 0.696,
+  filter_effect = 0.31*prop_time_at_home+1*0.31, #Barn et al. 2009 for Both Summer and Winter
+  rr_salbutamol = 1.04,
+  rr_gp = 1.06,
+  rr_er = 1.07,
+  rr_hosp = 1.06,
+  rr_sev_exac_unctrl          = 1.112742,
+  rr_sev_exac_part_ctrl       = 1.035237, 
+      
+  p_death_sev_exac_scs        = 0.000267,
+  p_death_sev_exac_ed         = 0.001733,
+  p_death_sev_exac_hosp       = 0.001801,
+  p_well_unctrl               = rescale_prob(0.012985, to=1/30),
+  p_well_part_ctrl            = rescale_prob(0.130332, to=1/30),
+  p_part_ctrl_well            = rescale_prob(0.100721, to=1/30),
+  p_part_ctrl_unctrl          = rescale_prob(0.090431, to=1/30),
+  p_unctrl_part_ctrl          = rescale_prob(0.122686, to=1/30),
+  p_unctrl_well               = rescale_prob(0.039498, to=1/30),
+  p_well_sev_exac_scs         = rescale_prob(0.08557744, to=1/365),
+  p_well_sev_exac_ed          = rescale_prob(0.0110676, to=1/365),
+  p_well_sev_exac_hosp        = rescale_prob(0.008524469, to=1/365),
+
+  modelYear  = yr + 
+    (markov_cycle>365)*floor(markov_cycle/365), 
+#  modelMonth = monthly(markov_cycle)+startingMonth-1,
+#  modelDate  = lubridate::ym(paste0(modelYear, "-", modelMonth)),
+  modelDate = ymd(paste0(yr,"-",startingMonth,"-","1")) + days(markov_cycle) - 1,
+  filter_effectModifier = isFilterOn(modelDate, hsdaName, smoke, pm_threshold)*filter_effect + !isFilterOn(modelDate, hsdaName, smoke, pm_threshold),
+  smoke_salbu      = 
+  rr_salbutamol^(infiltration*smokeLevel(modelDate, hsdaName, smoke)), 
+  smoke_salbu_hepa =
+    rr_salbutamol^(filter_effectModifier*infiltration*smokeLevel(modelDate, hsdaName, smoke)),
+  smoke_ER         = 
+    rr_er^(infiltration*smokeLevel(modelDate, hsdaName, smoke)),
+  smoke_ER_hepa    = 
+    rr_er^(filter_effectModifier*infiltration*smokeLevel(modelDate, hsdaName, smoke)),
+  smoke_SCS        = 
+    rr_gp^(infiltration*smokeLevel(modelDate, hsdaName, smoke)),
+  smoke_SCS_hepa   = 
+    rr_gp^(filter_effectModifier*infiltration*smokeLevel(modelDate, hsdaName, smoke)),
+  smoke_hosp       =
+    rr_hosp^(infiltration*smokeLevel(modelDate, hsdaName, smoke)),
+  smoke_hosp_hepa  = 
+    rr_hosp^(filter_effectModifier*infiltration*smokeLevel(modelDate, hsdaName, smoke)),
+  
+  u_asthma_well      = 0.70/365,
+  u_asthma_part_ctrl = 0.66/365, 
+  u_asthma_unctrl    = 0.61/365,
+
+  du_exac_scs        = -0.0057-6.48*0.61/365, # daily adjusted for 6.48 days  
+  du_exac_er         = -0.00745-5.53*0.61/365, # daily adjusted for 5.53 days 
+  du_exac_hosp       = -0.0092-6*0.61/365, # daily adjusted for 6 days 
+  
+  c_asthma_well       = 308.16*1.05/30,
+  c_asthma_part_ctrl  = 385.20*1.05/30, 
+  c_asthma_unctrl     = 406.25*1.05/30, 
+  
+  c_exac_scs       = 173.06*1.05-6.48*406.25*1.05/30, #Adjusted for 7 days duration 
+  c_exac_er        = 547.50*1.05-5.53*406.25*1.05/30, #Adjusted for 7 days duration 
+  c_exac_hosp      = 10485.61*1.05-6*406.25*1.05/30, #Adjusted for 7 days duration 
+  
+  lifespan_cleaner = 5, #years
+  lifespan_filter  = 9, #months
+  c_hepa_unit_list_price = 150, 
+  c_filter_list_price = 21,
+  c_hepa_capital = as.numeric(
+    (markov_cycle%%(365*lifespan_cleaner)==0))* c_hepa_unit_list_price*0.7,
+  c_hepa_maintain = as.numeric((
+    markov_cycle%%(lifespan_filter*30)==0))*c_filter_list_price,
+  c_hepa = 0*c_hepa_capital + 0*c_hepa_maintain, #capital cost added as a lump sum, no maintenance cost from payer's perspective
+  
+  #mortality
+
+#  mr =  get_who_mr(age, country = "CAN", local = TRUE)
+  mr =  rescale_prob(sapply(age, mrBC), 1/365)
+  
+)
+  
+if (as.numeric((totalCycles/365)>5)) {
+    warning("Markov cycles exceed lifespan of the air cleaner. Cost of second purchase is NOT included in the analysis!")
+  }  
+if (!is.null(rebate)){
+  strat_hepa <- define_strategy(
+  transition     = mat_hepa,
+  asthma         = state_asthma_hepa,
+  partCtrlAsthma = state_partCtrlAsthma_hepa,
+  unctrlAsthma   = state_unctrlAsthma_hepa,
+  sevExac_SCS    = state_sevExac_SCS_hepa,
+  sevExac_ER     = state_sevExac_ER_hepa,
+  sevExac_hosp   = state_sevExac_hosp_hepa,
+  death          = state_death,
+  starting_values = define_starting_values(
+  cost_total      = rebate)
+  )
+  
+}  
+
+  
+  res_mod <- run_model(
+    init=time0,
+    normal = strat_normal,
+    hepa = strat_hepa,
+    cycles = totalCycles,
+    parameters = param,
+    cost = cost_total,
+    effect = life_year
+  )
+  
+    if (dsa) { 
+      dsa_param <- define_dsa(
+        age_init, 33, 67,
+        r_discount, 0, 0.05/365,
+        prop_time_at_home, 0.8*0.696, 1.2*0.696,
+        filter_effect, 0.8*0.31*prop_time_at_home+1*0.31, 1.2*0.31*prop_time_at_home+1*0.31,
+        #lifespan_cleaner, 4, 10, 
+        #lifespan_filter, 4, 12,
+        rr_salbutamol, 1, 1.20,
+        rr_gp, 1, 1.20,
+        rr_er, 1, 1.20,
+        rr_hosp, 1, 1.20,
+        rr_sev_exac_unctrl, 0.8*1.36875, 1.2*1.36875,
+        rr_sev_exac_part_ctrl, 0.8*1.09375, 1.2*1.09375, 
+        
+        p_well_sev_exac_scs, 0.8*24507e-8, 1.2*24507e-8, 
+        p_well_sev_exac_ed,  0.8*3049e-8, 1.2*3049e-8,  
+        p_well_sev_exac_hosp, 0.8*2345e-8, 1.2*2345e-8,
+      
+        c_asthma_well     , 0.8*308.16*1.05/30, 1.2*308.16*1.05/30,
+        c_asthma_part_ctrl, 0.8*385.20*1.05/30, 1.2*385.20*1.05/30, 
+        c_asthma_unctrl   , 0.8*406.25*1.05/30, 1.2*406.25*1.05/30,
+        
+        c_exac_scs, 138.45-7*406.25*1.05/30, 207.66-7*406.25*1.05/30,
+        c_exac_er, 437.99-7*406.25*1.05/30, 657.00-7*406.25*1.05/30,
+        c_exac_hosp, 8388.53-7*406.25*1.05/30, 12582.78-7*406.25*1.05/30,
+        c_hepa_unit_list_price, 0.8*(150),1.2*(150),
+        # c_filter_list_price, 0.8*(21), 1.2*(21),
+        
+        du_exac_scs, -0.0057*0.8-6.48*0.61/365, -0.0057*1.2-6.48*0.61/365,
+        du_exac_er ,-0.00745*0.8-5.53*0.61/365, -0.00745*1.2-5.53*0.61/365,
+        du_exac_hosp, -0.0092*0.8-6*0.61/365, -0.0092*1.2-6*0.61/365, 
+        u_asthma_well, 0.8*0.70/365, 1.20*0.70/365,
+        u_asthma_part_ctrl, 0.8*0.66/365, 1.20*0.66/365,
+        u_asthma_unctrl , 0.8*0.61/365, 1.20*0.61/365
+    )
+
+    res_dsa <- run_dsa(
+                  model=res_mod,
+                  dsa=dsa_param)
+    
+    # res_dsa <- as_tibble(res_dsa$dsa)
+    # write_csv(res_dsa, 
+    #           file=paste0("./dsa/", 
+    #                       j, 
+    #                       "-", 
+    #                       as.character(hsdaNames[i,]),
+    #                       "-dsa.csv")) 
+    
+    p_dsa_cost <- plot(res_dsa,
+             strategy = "hepa",
+             result = "cost",
+             type = "difference",
+             remove_ns = TRUE,
+             limits_by_bars = FALSE) + 
+      ggtitle(hsdaName) + 
+      theme_few() + 
+      scale_x_continuous(labels = label_dollar())
+    
+    
+    ggsave(filename=paste0("./dsa/",
+                          hsdaName,
+                          "-cost-dsa.png"),
+           plot = p_dsa_cost)
+    
+   p_dsa_effect <- plot(res_dsa,
+             strategy = "hepa",
+             result = "effect",
+             type = "difference",
+             remove_ns = TRUE,
+             limits_by_bars = FALSE) + 
+      ggtitle(hsdaName) + 
+      theme_few() 
+   
+    ggsave(filename=paste0("./dsa/",
+                          hsdaName,
+                          "-effect-dsa.png"),
+           plot = p_dsa_effect)
+    
+    
+    }
+  
+    psa_prob <- NULL
+    
+    if (psa) {
+      if (cores>0) {use_cluster(cores) }
+      psa_param <- define_psa(
+      
+#      age_init              ~ gamma(mean=41, sd=17),
+      prop_time_at_home     ~ beta(69600, 1e5-69600),   
+      filter_effect         ~ beta(52576, 1e5-52576), 
+#      lifespan_cleaner      ~ normal(mean=5, sd=1),
+#      lifespan_filter       ~ normal(mean=6, sd=1),
+      rr_salbutamol         ~ lognormal(mean=1.04, sdlog=0.007324008),
+      rr_gp                 ~ lognormal(mean=1.06, sdlog=0.009627635),
+      rr_er                 ~ lognormal(mean=1.07, sdlog=0.01197882),
+      rr_hosp               ~ lognormal(mean=1.06, sdlog=0.01693242),
+      
+      p_death_sev_exac_scs  ~ beta(2670, 1e7-2670),
+      p_death_sev_exac_er   ~ beta(17330, 1e7-17330),
+      p_death_sev_exac_hosp ~ beta(18010, 1e7-18010),
+
+      p_well_unctrl         ~ beta(43557, 1e8-43557),
+      p_well_part_ctrl      ~ beta(464397, 1e8-464397),
+      p_part_ctrl_well      ~ beta(353248, 1e8-353248),
+      p_part_ctrl_unctrl    ~ beta(315450, 1e8-315450),
+      p_unctrl_part_ctrl    ~ beta(435351, 1e8-435351),
+      p_unctrl_well         ~ beta(134241, 1e8-134241),
+      p_well_sev_exac_scs   ~ beta(24507, 1e8-24507), 
+      p_well_sev_exac_ed    ~ beta(3049, 1e8-3049),  
+      p_well_sev_exac_hosp  ~ beta(2345, 1e8-2345),
+
+      c_asthma_well         ~ normal(mean=308.16*1.05/30, sd=59.50/30), 
+      c_asthma_part_ctrl    ~ normal(mean=385.20*1.05/30, sd=27.41/30),
+      c_asthma_unctrl       ~ normal(mean=406.25*1.05/30, sd=34.82/30),
+        
+      c_exac_scs            ~ gamma(mean=78.26833  , sd=sqrt(78.26833)),
+      c_exac_er             ~ gamma(mean=452.7083  , sd=sqrt(452.7083)), 
+      c_exac_hosp           ~ gamma(mean=10390.82  , sd=sqrt(10390.82)),
+
+      u_asthma_well         ~ beta(191781, 1e8-191781),
+      u_asthma_part_ctrl    ~ beta(180822, 1e8-180822),
+      u_asthma_unctrl       ~ beta(167123, 1e8-167123),
+    
+      du_exac_scs    ~ normal(mean=-0.01652959, sd=0.01652959/10),
+      du_exac_er     ~ normal(mean=-0.01669192, sd=0.01669192/10),
+      du_exac_hosp   ~ normal(mean=-0.0192274, sd=0.0192274/10)
+      )
+      
+      res_psa <- run_psa(
+      model = res_mod,
+      psa = psa_param,
+      N = samplingPSA)
+      
+      #plot(res_psa, type = "ce")
+      psa_prob <- plot(res_psa, type = "ac", max_wtp = 100000, n=3,
+                       log_scale = FALSE)$data
+     
+      
+    }
+return(list("res_mod"=res_mod, "psa_prob"=psa_prob))
+  
+ }
+
+```
+
+```{r, warning=TRUE, eval=FALSE, echo=FALSE}
+message('First, try one HSDA for one year.')
+pm_threshold <- 0
+run_res <- hepaICER("Kootenay Boundary", 
+                    2018,  
+                    startingMonth=1, 
+                    totalCycles=365*5, 
+                    smoke = smoke, 
+                    pm_threshold=pm_threshold,
+                    psa = FALSE,
+                    samplingPSA = 100,
+                    cores=0)
+summary(run_res$res_mod)$res_comp$.icer[2]
+tmp <- get_counts(run_res$res_mod)
+tmp %>% filter(.strategy_names=="hepa") %>% ggplot(aes(x=markov_cycle, y=count)) + geom_line(aes(colour=state_names))
+
+```
+
+```{r mainCalculation, message=FALSE, cache=TRUE, warning=TRUE, echo=FALSE}
+psa_flag <- FALSE 
+dsa_flag <- FALSE
+pm_threshold <- 0
+smoke_days <- sf::st_drop_geometry(hsda %>% select(HLTH_SERVICE_DLVR_AREA_NAME, date,     smoke)) %>% 
+  mutate(smokey=as.numeric(smoke>=pm_threshold)) %>%
+  mutate(yearMonth=ym(paste0(year(date), "-", month(date)))) %>%
+  group_by(HLTH_SERVICE_DLVR_AREA_NAME) %>%
+  summarise(n_smoky_days = sum(smokey)) %>%
+  ungroup()
+  
+use_cluster(parallel::detectCores())
+
+#hsdaNames <- readRDS("./data/hsdaNames.RDS")
+hsdaNames <- as_tibble(hsda$HLTH_SERVICE_DLVR_AREA_NAME) %>% distinct()
+
+bcICER <- data.frame(matrix(ncol = 10, nrow = 0))
+
+  for (i in (1:dim(hsdaNames)[1])){
+    run_res  <- hepaICER(as.character(hsdaNames[i,]), 2018,  totalCycles=365*5,
+                         startingMonth = 1, smoke=smoke,
+                         pm_threshold = pm_threshold,
+                         psa = psa_flag, samplingPSA=1000, dsa = dsa_flag)
+    model_res <- run_res$res_mod
+    icer_temp <- summary(model_res)$res_comp$.icer[2]
+    eff_temp  <- summary(model_res)$res_comp$.deffect[2]
+    cost_temp <- summary(model_res)$res_comp$.dcost[2]
+    
+    #Now getting differences in clinical outcomes per initial cohort n
+    res       <- get_counts(model_res)
+    
+    diff_asthma_temp <- res %>% 
+      filter(state_names=="asthma") %>% 
+      group_by(.strategy_names) %>%
+      summarise(total = sum(count)) %>%
+      ungroup()
+    diff_asthma_temp <- as.numeric(diff_asthma_temp[2,2] - diff_asthma_temp[1,2])
+    
+    
+    diff_SCS_temp <- res %>% 
+      filter(state_names=="sevExac_SCS") %>% 
+      group_by(.strategy_names) %>%
+      summarise(total = sum(count)) %>%
+      ungroup()
+    diff_SCS_temp <- as.numeric(diff_SCS_temp[2,2] - diff_SCS_temp[1,2])
+
+    diff_ER_temp <- res %>% 
+      filter(state_names=="sevExac_ER") %>% 
+      group_by(.strategy_names) %>%
+      summarise(total = sum(count)) %>%
+      ungroup()
+    diff_ER_temp <- as.numeric(diff_ER_temp[2,2] - diff_ER_temp[1,2])
+      
+    diff_hosp_temp <- res %>% 
+      filter(state_names=="sevExac_hosp") %>% 
+      group_by(.strategy_names) %>%
+      summarise(total = sum(count)) %>%
+       ungroup()
+    diff_hosp_temp <- as.numeric(diff_hosp_temp[2,2] - diff_hosp_temp[1,2]
+                                 )
+    if (psa_flag){ # Now getting PSA results
+    model_psa    <- run_res$psa_prob
+    psa_prob_50  <- as.numeric((model_psa %>% 
+      filter(.ceac==50000 & .strategy_names=="hepa"))[".p"])
+    psa_prob_100 <- as.numeric((model_psa %>% 
+      filter(.ceac==100000 & .strategy_names=="hepa"))[".p"])
+    cat(Sys.time(),"-",i, '\n', 
+        file = './psa/log.txt', sep = '', append = TRUE)
+    }
+    
+    if (!psa_flag) {
+      psa_prob_50 <-  psa_prob_100 <- NA
+    }
+    
+    bcICER <- 
+      rbind(bcICER, 
+            c(
+              as.character(hsdaNames[i,]), 
+              icer_temp, 
+              cost_temp,
+              eff_temp,
+              diff_SCS_temp,
+              diff_ER_temp,
+              diff_hosp_temp,
+              psa_prob_50,
+              psa_prob_100
+              ))
+  
+  }
+
+
+  titles <- c("HLTH_SERVICE_DLVR_AREA_NAME", "ICER", "dcost", 
+              "deffect", "dSCS", "dER", "dhosp", "psa_prob_50", "psa_prob_100")
+  colnames(bcICER)     <- titles
+  bcICER$ICER          <- as.numeric(bcICER$ICER)
+  bcICER$dcost         <- as.numeric(bcICER$dcost)
+  bcICER$deffect       <- as.numeric(bcICER$deffect)
+  bcICER$dSCS          <- as.numeric(bcICER$dSCS)
+  bcICER$dER           <- as.numeric(bcICER$dER)
+  bcICER$dhosp         <- as.numeric(bcICER$dhosp)
+  bcICER$psa_prob_50   <- as.numeric(bcICER$psa_prob_50)
+  bcICER$psa_prob_100  <- as.numeric(bcICER$psa_prob_100)
+
+ if (psa_flag) {
+   saveRDS(object = bcICER, file = paste0("./psa/", Sys.Date(), "bcICER.rds"))
+ } else { #read PSA data from latest run 
+    psa_files <- file.info(list.files("./psa/", pattern= "*.rds", full.names = T))
+    latest_psa_file <- rownames(psa_files)[which.max(psa_files$mtime)]
+    latest_psa <- readRDS(latest_psa_file)
+    bcICER$psa_prob_50  <- as.numeric(latest_psa$psa_prob_50)
+    bcICER$psa_prob_100 <- as.numeric(latest_psa$psa_prob_100)
+  }
+   
+
+# saveRDS(bcICER, "./data/bcICER-2023-01-13.rds")
+hsdaICER <-  bcmaps::health_hsda() %>% 
+  left_join(bcICER, by="HLTH_SERVICE_DLVR_AREA_NAME") 
+
+close_cluster()
+```
+
+@fig-ICER shows the incremental cost-effectiveness ratio (ICER) for each HSDA in BC during the time horizon and the associated probability of cost-effectiveness when the uncertainty around model input parameters (@tbl-parameters) is taken into account. In the base case analysis in which government paid 100% of the purchase cost for HEPA filter units, ICER was below a WTP threshold of \$50,000/QALY in Kootenay Boundary and above the threshold elsewhere in the province.
+
+```{r, fig.width=12, fig.height=12, echo=FALSE, message=FALSE}
+#| layout-ncol: 2
+#| label: fig-ICER
+#| fig-cap: Base-case results
+#| fig-subcap: 
+#|   - ICERs for the 100% HEPA rebate program
+#|   - Cost-effectiveness probability at WTP=$50,000/QALY
+library(ggforce)
+library(ggsflabel)
+
+group.colors <- c("No"          = "#F8766D", 
+                  "Yes at 50K"  = "#00BA38", 
+                  "Yes at 100K" = "#00BFC4",
+                  "Yes at 3xGDP"= "#619CFF")
+
+hsdaICER <- hsdaICER %>% 
+  mutate(costEffective=ifelse(ICER<=50000, "Yes at 50K", "No"))
+ggplot(data = hsdaICER) + 
+    geom_sf(mapping = aes(fill = ICER)) + 
+#    scale_fill_manual(values=group.colors) +
+    coord_sf(datum = NA) +
+    geom_sf_label_repel(aes(
+      label = paste0(HLTH_SERVICE_DLVR_AREA_NAME, ":", 
+                     label_dollar(accuracy=0.1,
+                                  scale_cut = cut_long_scale())(ICER))), 
+      force=100, nudge_y=-5, nudge_x = -2, seed = 10, size=7) + 
+    #  scale_fill_distiller(palette = "Blues") +
+    scale_fill_distiller(labels=
+                           label_dollar(accuracy=1, 
+                                        scale_cut = cut_long_scale()), 
+palette = "RdBu",  limits = c(10000, 90000),
+    guide = guide_legend(
+      label.theme = element_text(size = 20)
+    )) +
+    theme_minimal() + 
+#    labs(title = "ICER for HEPA Distribution Program") + 
+    xlab("") + ylab("") + 
+  theme(legend.position="bottom") + 
+    theme(text = element_text(size = 20)) +
+    theme(legend.title=element_blank())
+
+psa.colors <- c("FALSE" = "#F8766D", "TRUE" = "#00BA38")
+
+  ggplot(data = hsdaICER) + 
+  geom_sf(mapping = aes(fill = psa_prob_50), show.legend = TRUE) + 
+#  scale_fill_manual(values=psa.colors) +
+  coord_sf(datum = NA) +
+  geom_sf_label_repel(aes(label = paste0(HLTH_SERVICE_DLVR_AREA_NAME,
+                                         ":",
+                                         label_percent()(psa_prob_50))), 
+   force=100, nudge_y=-5, nudge_x = -2, seed = 10, size=7) + 
+  scale_fill_distiller(labels=label_percent(accuracy=1), palette = "RdBu",  
+                       limits = c(0, 1),
+                       direction=1,
+                      guide = guide_legend(
+      label.theme = element_text(size = 20)
+    )) +
+  theme_minimal() + 
+  xlab("") + ylab("") + 
+  theme(legend.position="bottom") + 
+  theme(text = element_text(size = 20)) + 
+  theme(legend.title=element_blank())
+
+
+```
+
+```{r, echo=FALSE, warning=TRUE, message=TRUE, eval=FALSE}
+
+findThreshold <- function(thres, smoke, hsda_name) {
+
+  res <- summary(hepaICER(hsda_name, 2018,  
+                          startingMonth=1, 
+                          totalCycles=365*5, 
+                          smoke = smoke, rebate=thres, pm_threshold = 0)$res_mod)$res_comp$.icer[2]
+  return(tibble(ICER=res))
+}
+
+library(purrr)
+resThres <- seq(0, 100, by=100) %>% 
+  map_dfr(function(x) findThreshold(x, smoke=smoke, hsda_name = "Vancouver"))
+
+
+resThres <- resThres %>% mutate(rebateThreshold=seq(0, 100, by=100))
+
+threshold_50 <- predict(lm(rebateThreshold ~ ICER, data = resThres), newdata=list(ICER=5e4))
+threshold_50 <- round(threshold_50, 2)
+
+threshold_100 <- predict(lm(rebateThreshold ~ ICER, data = resThres), newdata=list(ICER=1e5))
+threshold_100 <- round(threshold_100, 2)
+
+pretty_br <- pretty(resThres$rebateThreshold)[abs(pretty(resThres$rebateThreshold) - 1.5) > 0.25]
+
+ ggplot(resThres) +
+  geom_line(aes(x=rebateThreshold, y=ICER), linewidth=1, colour="salmon") + 
+  geom_hline(yintercept = 5e4) +  
+  geom_hline(yintercept = 1e5) +  
+  geom_segment(x=threshold_50, y=0, xend=threshold_50, yend=5e4, linetype="dashed") + 
+  geom_segment(x=threshold_100, y=0, xend=threshold_100, yend=1e5, linetype="dashed") + 
+  scale_x_continuous(breaks = c(pretty_br, threshold_100, threshold_50),
+                     labels = c(pretty_br, threshold_100, threshold_50), 
+                     guide = guide_axis(angle = -90)) + 
+  ylim(0.5e4, 2e5) +
+  ggtitle("Rebate level thresholds and ICER for air filters") + 
+  theme_few() 
+```
+
+@tbl-ICER ranks HSDAs in BC in terms of HEPA rebate program cost-effectiveness, in descending order based on ICER. ICERs ranged from \$40,509/QALY in Kootenay Boundary to \$89,206/QALY in Northwest. Based on model projections and prevalence of asthma in BC, a total of 4,418 severe exacerbations leading to systemic corticosteroids use, 643 emergency department visits, and 425 cases of hospitalizations could be averted by continuous HEPA air filter use. Due to the larger populations and higher prevalence of asthma, the highest number of severe exacerbations averted (including systemic corticosteroids use, emergency department visits, and hospitalizations) were in Fraser South (961), Fraser North (644), Okanagan (607), and Vancouver (590).
+
+Cost-effectiveness probabilities were highest in Kootenay Boundary (74.8%), Okanagan (35.3%), and Thomson Cariboo Shuswap (20.8%) HSDAs. One-way sensitivity analysis (Appendix) showed that costs and QALYs were most sensitive to the risk ratios of increased salbutamol dispensation and hospitalization per 10 µg/m³ increase in PM~2.5~, utility of well-controlled and uncontrolled asthma, and the retail price of air filter units.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#| label: tbl-ICER 
+#| tbl-cap: ICERs for the portable HEPA air cleaner rebate program in BC
+
+library(gt)
+
+hsda_asthma_prevalence <- read_csv("./data/asthma_hsda_bc_2020_2021.csv")
+
+bcICER %>% 
+  group_by(HLTH_SERVICE_DLVR_AREA_NAME) %>%
+  summarise(dcost  = mean(dcost, na.rm=TRUE), 
+            deffect= round(mean(deffect, na.rm=TRUE), 5),
+            ICER   = mean(ICER, na.rm=TRUE),
+            dSCS   = mean(dSCS , na.rm=TRUE),
+            dER    = mean(dER  , na.rm=TRUE),
+            dhosp  = mean(dhosp, na.rm=TRUE),
+            psa_prob_50  = mean(psa_prob_50, na.rm=TRUE),
+ #           psa_prob_100 = mean(psa_prob_100*100, na.rm=TRUE)
+            ) %>%
+  ungroup() %>%
+  left_join(smoke_days, by="HLTH_SERVICE_DLVR_AREA_NAME") %>%
+  left_join(hsda_asthma_prevalence,  by="HLTH_SERVICE_DLVR_AREA_NAME") %>%
+  mutate(nmb_50  = round((deffect*50000-dcost), 2)) %>%
+#  mutate(nmb_100 = round((deffect*100000-dcost), 2)) %>%
+  mutate(dSCS    = round(dSCS*asthmaCases/1e5))%>%
+  mutate(dER     = round(dER*asthmaCases/1e5)) %>%
+  mutate(dhosp   = round(dhosp*asthmaCases/1e5)) %>%
+  select(-n_smoky_days, -asthmaCases) %>%
+  # mutate(CostEffective50 = ICER<=50000) %>%
+  # mutate(CostEffective100 = ICER<=100000) %>%
+  arrange(ICER) %>%
+  gt() %>%
+  # tab_header(
+  #   title = "ICER for the portable HEPA air cleaner program distribution in BC",
+  #   subtitle = "Based on historical wildfire smoke pollution data from 2018 to 2022"
+#  ) %>%
+  tab_spanner(
+    label="ΔExacerbation",
+    columns = c(dSCS, dER, dhosp)
+  ) %>%
+  cols_label(
+    HLTH_SERVICE_DLVR_AREA_NAME = html("HSDA"),
+#    n_smoky_days = html("Air cleaner use<br> days of operation"),
+#    asthmaCases = html("Asthma prevalence"),
+    ICER = html("ICER"),
+    nmb_50 = html("NMB"),
+#    nmb_100 = html("Net Monetary Benefit<br>WTP=$100,000"),
+    dcost = html("ΔCost"),
+    deffect = html("ΔQALY"),
+    dSCS = html("SCS"),
+    dER = html("ED"),
+    dhosp = html("Hosp"),
+    # CostEffective50 = html("Cost-effective<br>WTP=$50k"),
+    # CostEffective100 = html("Cost-effective<br>WTP=$100k"),
+    #psa_prob_50  = html("P<SUB>CE</SUB>"), 
+    psa_prob_50  = md("P_CE"),
+#    psa_prob_100 = html("Cost-effectiveness %<br>WTP=$100k")
+  ) %>%
+  fmt_currency(
+    columns = c(dcost, nmb_50),
+    currency = "CAD",
+    decimals = 1
+  ) %>%
+  fmt_currency(
+    columns = c(ICER),
+    currency = "CAD",
+    decimals = 0
+  ) %>%
+  fmt_number(
+    columns = c(dSCS, dER, dhosp),
+    decimals = 0,
+    use_seps = TRUE
+  ) %>%
+  fmt_number(
+    columns = c(deffect),
+    decimals = 4) %>%
+  fmt_percent(
+    columns = (psa_prob_50),
+    decimals = 1
+  ) %>%
+     tab_footnote(
+    footnote = md("SCS, ED, and Hosp denote excerbations requiring systemic corticosteroid therapy, emergency department vist, and hospitalization, respectively."),
+    locations = cells_column_labels(
+      columns = c(dSCS, dER, dhosp)
+    )) %>%
+    tab_footnote(
+    footnote = md("P_CE=Probability of Cost-Effectiveness based on probabilistic sensitivity analysis."),
+    locations = cells_column_labels(
+      columns = psa_prob_50
+    )) %>%
+    tab_footnote(
+    footnote = html("NMB=Net Monetary Benefit"),
+    locations = cells_column_labels(
+      columns = nmb_50
+    ))
+
+
+    
+
+```
+
+## Scenario Analyses
+
+@fig-scenarios shows results of scenario analyses. Our results suggest that a \$100 rebate program would have been cost-effective at a WTP threshold of \$50,000/QALY everywhere in the province except for the North Shore/Coast Garibaldi and Northwest HSDAs with ICERS of \$50,500/QALY and \$53,200/QALY, respectively.
+
+```{r scenario1, message=FALSE, cache=TRUE, warning=FALSE, echo=FALSE}
+
+use_cluster(parallel::detectCores())
+
+bcICER_scenario1 <- data.frame(matrix(ncol = 4, nrow = 0))
+
+  for (i in (1:dim(hsdaNames)[1])){
+    run_res_scenario1  <- hepaICER(as.character(hsdaNames[i,]), 
+                                   2018,  totalCycles=365*5,
+                         startingMonth = 1, smoke=smoke,
+                         pm_threshold = 0, rebate = 100*0.7, 
+                         psa = FALSE, samplingPSA=1000, dsa = FALSE)
+    model_res_scenario1 <- run_res_scenario1$res_mod
+    icer_temp_scenario1 <- summary(model_res_scenario1)$res_comp$.icer[2]
+    eff_temp_scenario1  <- summary(model_res_scenario1)$res_comp$.deffect[2]
+    cost_temp_scenario1 <- summary(model_res_scenario1)$res_comp$.dcost[2]
+    
+    bcICER_scenario1 <- 
+      rbind(bcICER_scenario1, 
+            c(
+              as.character(hsdaNames[i,]), 
+              icer_temp_scenario1, 
+              cost_temp_scenario1,
+              eff_temp_scenario1
+              ))
+  
+  }
+
+
+  titles <- c("HLTH_SERVICE_DLVR_AREA_NAME", "ICER", "dcost", 
+              "deffect")
+  colnames(bcICER_scenario1)    <- titles
+  bcICER_scenario1$ICER         <- as.numeric(bcICER_scenario1$ICER)
+  bcICER_scenario1$dcost        <- as.numeric(bcICER_scenario1$dcost)
+  bcICER_scenario1$deffect      <- as.numeric(bcICER_scenario1$deffect)
+
+
+hsdaICER_scenario1 <-  bcmaps::health_hsda() %>% 
+  left_join(bcICER_scenario1, by="HLTH_SERVICE_DLVR_AREA_NAME") 
+
+close_cluster()
+```
+
+The next two scenarios are based on operation of HEPA filters when the outdoor PM~2.5~ exceeded a threshold concentration. We used a threshold of 25 μg/m^3^ for PM~2.5~, based on the BC government 24-hour ambient air quality objective which is used, along with other information to guide decisions on when to issue an air quality advisory [@ministryofenvironmentandclimatechangestrategy].
+
+Days with PM~2.5~ concentrations above 25 μg/m^3^ were most common in August, followed by September, July, October, and May. Our results suggest that a full purchase rebate along with operation of air filters on days in which outdoor PM~2.5~ concentrations exceeded 25 μg/m^3^ would not have been cost-effective anywhere in BC.
+
+```{r scenario2, message=FALSE, cache=TRUE, warning=FALSE, echo=FALSE}
+
+use_cluster(parallel::detectCores())
+
+bcICER_scenario2 <- data.frame(matrix(ncol = 4, nrow = 0))
+
+  for (i in (1:dim(hsdaNames)[1])){
+    run_res_scenario2  <- hepaICER(as.character(hsdaNames[i,]), 
+                                   2018,  totalCycles=365*5,
+                         startingMonth = 1, smoke=smoke,
+                         pm_threshold = 25,
+                         psa = FALSE, samplingPSA=1000, dsa = FALSE)
+    model_res_scenario2 <- run_res_scenario2$res_mod
+    icer_temp_scenario2 <- summary(model_res_scenario2)$res_comp$.icer[2]
+    eff_temp_scenario2  <- summary(model_res_scenario2)$res_comp$.deffect[2]
+    cost_temp_scenario2 <- summary(model_res_scenario2)$res_comp$.dcost[2]
+    
+
+    bcICER_scenario2 <- 
+      rbind(bcICER_scenario2, 
+            c(
+              as.character(hsdaNames[i,]), 
+              icer_temp_scenario2, 
+              cost_temp_scenario2,
+              eff_temp_scenario2
+              ))
+  
+  }
+
+
+  titles <- c("HLTH_SERVICE_DLVR_AREA_NAME", "ICER", "dcost", 
+              "deffect")
+  colnames(bcICER_scenario2)     <- titles
+  bcICER_scenario2$ICER          <- as.numeric(bcICER_scenario2$ICER)
+  bcICER_scenario2$dcost         <- as.numeric(bcICER_scenario2$dcost)
+  bcICER_scenario2$deffect       <- as.numeric(bcICER_scenario2$deffect)
+
+
+
+
+hsdaICER_scenario2 <-  bcmaps::health_hsda() %>% 
+  left_join(bcICER_scenario2, by="HLTH_SERVICE_DLVR_AREA_NAME") 
+
+close_cluster()
+```
+
+The last scenario considered a combination of a \$30 rebate and operation of air filters on days in which PM~2.5~ concentrations exceeded 25 μg/m^3^. Our results suggest that the intervention would have been cost-effective in Kootenay Boundary, Okanagan, Thompson Cariboo Shuswap, and Northern Interior.
+
+```{r scenario3, message=FALSE, cache=TRUE, warning=FALSE, echo=FALSE}
+
+use_cluster(parallel::detectCores())
+
+bcICER_scenario3 <- data.frame(matrix(ncol = 4, nrow = 0))
+
+  for (i in (1:dim(hsdaNames)[1])){
+    run_res_scenario3  <- hepaICER(as.character(hsdaNames[i,]), 
+                                   2018,  totalCycles=365*5,
+                         startingMonth = 1, smoke=smoke,
+                         pm_threshold = 25, rebate=30*0.7,
+                         psa = FALSE, samplingPSA=1000, dsa = FALSE)
+    model_res_scenario3 <- run_res_scenario3$res_mod
+    icer_temp_scenario3 <- summary(model_res_scenario3)$res_comp$.icer[2]
+    eff_temp_scenario3  <- summary(model_res_scenario3)$res_comp$.deffect[2]
+    cost_temp_scenario3 <- summary(model_res_scenario3)$res_comp$.dcost[2]
+    
+
+    bcICER_scenario3 <- 
+            rbind(bcICER_scenario3, 
+            c(
+              as.character(hsdaNames[i,]), 
+              icer_temp_scenario3, 
+              cost_temp_scenario3,
+              eff_temp_scenario3
+              ))
+  
+  }
+
+
+  titles <- c("HLTH_SERVICE_DLVR_AREA_NAME", "ICER", "dcost", 
+              "deffect")
+  colnames(bcICER_scenario3)     <- titles
+  bcICER_scenario3$ICER          <- as.numeric(bcICER_scenario3$ICER)
+  bcICER_scenario3$dcost         <- as.numeric(bcICER_scenario3$dcost)
+  bcICER_scenario3$deffect       <- as.numeric(bcICER_scenario3$deffect)
+
+
+
+
+hsdaICER_scenario3 <-  bcmaps::health_hsda() %>% 
+  left_join(bcICER_scenario3, by="HLTH_SERVICE_DLVR_AREA_NAME") 
+
+close_cluster()
+```
+
+```{r, fig.width=12, fig.height=12, echo=FALSE, message=FALSE}
+#| layout-ncol: 3
+#| label: fig-scenarios
+#| fig-cap: ICERs for HEPA Rebate Program - Different Scenarios
+#| fig-subcap: 
+#|   - Scenario 1, $100 rebate
+#|   - Scenario 2, Full rebate and air filters on when PM~2.5~≥25μg/m^3^
+#|   - Scenario 3, $30 rebate and air filters on when PM~2.5~≥25μg/m^3^
+
+library(ggforce)
+library(ggsflabel)
+
+hsdaICER_scenario1 <- hsdaICER_scenario1 %>% 
+  mutate(costEffective=ifelse(ICER<=50000, "Yes at 50K", 
+                             # ifelse(ICER<=100000, "Yes at 100K", 
+                                     "No"))
+ggplot(data = hsdaICER_scenario1) + 
+    geom_sf(mapping = aes(fill = costEffective)) + 
+    scale_fill_manual(values=group.colors) +
+    coord_sf(datum = NA) +
+    geom_sf_label_repel(aes(label = paste0(
+      #HLTH_SERVICE_DLVR_AREA_NAME,":", 
+                                           label_dollar(accuracy=0.1,
+                                           scale_cut = cut_long_scale())(ICER))), 
+                        force=100, nudge_y=-5, nudge_x = -2, seed = 10, size=10) + 
+    theme_minimal() + 
+    xlab("") + ylab("") + 
+    theme(legend.position="bottom",
+          legend.text=element_text(size = 30),
+          legend.title = element_text(size = 30),
+          text = element_text(size = 20)) 
+
+hsdaICER_scenario2 <- hsdaICER_scenario2 %>% 
+  mutate(costEffective=ifelse(ICER<=50000, "Yes at 50K", 
+                             # ifelse(ICER<=100000, "Yes at 100K", 
+                                     "No"))
+ggplot(data = hsdaICER_scenario2) + 
+    geom_sf(mapping = aes(fill = costEffective)) + 
+    scale_fill_manual(values=group.colors) +
+    coord_sf(datum = NA) +
+    geom_sf_label_repel(aes(label =  paste0(
+      #HLTH_SERVICE_DLVR_AREA_NAME,":",
+      label_dollar(accuracy=0.1, scale_cut = cut_long_scale())(ICER))), 
+                  force=100, nudge_y=-5, nudge_x = -2, seed = 10, size=10) + 
+    theme_minimal() + 
+    xlab("") + ylab("") +
+    theme(legend.position="bottom",
+          legend.text=element_text(size = 30),
+          legend.title = element_text(size = 30),
+          text = element_text(size = 20)) 
+
+hsdaICER_scenario3 <- hsdaICER_scenario3 %>% 
+  mutate(costEffective=ifelse(ICER<=50000, "Yes at 50K", 
+                             # ifelse(ICER<=100000, "Yes at 100K",
+                                     "No"))
+ggplot(data = hsdaICER_scenario3) + 
+    geom_sf(mapping = aes(fill = costEffective)) + 
+    scale_fill_manual(values=group.colors) +
+    coord_sf(datum = NA) +
+    geom_sf_label_repel(aes(label =  paste(
+      #HLTH_SERVICE_DLVR_AREA_NAME,":", 
+      label_dollar(accuracy=0.1, scale_cut = cut_long_scale())(ICER))), 
+                  force=100, nudge_y=-5, nudge_x = -2, seed = 10, size=10) + 
+    theme_minimal() + 
+    xlab("") + ylab("") + 
+    theme(legend.position="bottom",
+          legend.text=element_text(size = 30),
+          legend.title = element_text(size = 30),
+          text = element_text(size = 20)) 
+
+```
+
+::: column-margin
+Other possible scenarios and the effect of alternative inputs on the results can be explored further using a web app, available at <https://resplab.shinyapps.io/hepa_wildfire_CE/>
+:::
+
+## Operation Costs
+
+While a formal evaluation of the intervention from a societal perspective is beyond the scope of this work, operation costs for patients were calculated to provide additional context. In the base case analysis when the air filter is operating continuously at its highest setting, patients anywhere in BC can expect to pay an average of \$10 for 87.60 kWh of electricity and \$40 for HEPA filter replacements annually, for a total of \$50 per year. In the threshold-based scenarios, operation costs would be much lower (between \$0.03 to \$1.91) and across different HSDAs as shown in the Appendix @tbl-operationCost.
+
+# Discussion
+
+We found that across BC, offering a 100% rebate on HEPA air filters was cost-effective between 2018-2022 in Kootenay Boundary HSDA, which had been the most wildfire prone HSDA in that time frame. Our results suggest that a \$100 rebate program was cost-effective in most of the province when air filters were used continuously throughout the year. When air filters are only operated on days in which PM~2.5~ levels exceed 25 μg/m^3^, a \$30 rebate program was also cost-effective in wildfire-prone areas of the interior and northern interior BC. To the best of our knowledge, this is the first cost-effectiveness analysis of a government-sponsored HEPA air filter rebate program designed to prevent wildfire smoke-related asthma exacerbations and improve asthma control.
+
+Particulate matter pollution is a major cause of health and economic burden in Canada. In its 2022 report on the health of Canadians in a changing climate, Health Canada classified fine particulate matter among the three major outdoor pollutants which are collectively responsible for 15,300 premature deaths in Canada annually, with an economic cost of \$114 billion [@healthcanada2022].
+
+There are growing calls for governments to better protect health, including by covering the cost of climate adaptation measures that protect the public. For example, the BC Coroner's report on the 2021 heat dome in BC, which resulted in 619 deaths, recommended that the BC government increase accessibility of air conditioners for use during extreme events by allowing them to be provided as medical devices through existing provincial programs [@thebccoronersservice2022]. In response to the Coroner's report, the BC Government launched a new initiative in June 2023 to provide 8000 publicly funded air conditioning units to low-income and medically vulnerable individuals[@bcministryofhealth2023]. Heat events and smoke can occur together and the current public health advice is to create or access cool environments with clean air. Our results suggest that a similar program should be implemented for HEPA filter air cleaners to mitigate the impacts of extreme wildfire events in HSDAs with recurrently high wildfire smoke exposure. Considering the equity implications of such programs, we believe that offering rebates for portable HEPA air filters can enhance equal access to healthier indoor environments. Such rebates could extend affordability to renters too, since presently available rebates primarily target homeowners.
+
+<!--# Although very common, the $50,000/QALY threshold is not evidence-based and has been called too low and suggested as a lower boundary as early as a decade ago [@neumann2014]. Ultimately, any cost-effectiveness threshold on ICER is arbitrary and it is unlikely that a single threshold can capture a society's willingness to pay for improvement in health and decisions to whether or not adopt the intervention should be made after a careful and transparent analysis of the context of each policy question and resource constraints [@marseille2015]. -->
+
+We made several assumptions to develop our cost-effectiveness model. Where possible, we opted for assumptions that would minimize the chance of wrongly identifying the intervention as cost-effective. For instance, we narrowly focused on the short-term health benefits of HEPA filters in preventing acute asthma complications. However, chronic exposure to wildfire smoke may also be associated with increased risk of asthma incidence. Maintaining asthma control and preventing exacerbations is likely associated with improved long-term respiratory outcomes, which were not accounted for in our analysis. We only considered the benefits of air filters in reducing exposure to wildfire-related PM~2.5~. However, HEPA air filters reduce concentrations of PM~2.5~ from all sources, including traffic and industry, indoor sources, allergens, bacteria, and respiratory viruses such as flu and COVID-19. We also assumed that HEPA air filter units would last only five years, regardless of how much they were in use, while the HEPA filters had to be replaced every 9 months.
+
+We also assumed the individuals with asthma spent the same proportion of time indoors as the general public. However, it is plausible that people living with asthma might increase their time indoors on days with high-levels of wildfire pollution, thereby improving the cost-effectiveness of portable HEPA filters compared to what we have reported.
+
+In our base case analysis, we assumed the air filter to be turned on continuously for the 5-year time-horizon of the model, which is in line with Health Canada's guideline that asserts there is no threshold of exposure to PM~2.5~ at which health effects may not occur[@healthcanada2012]. Continuous operation of air filters also ensures further benefits from reducing exposure to indoor sources of PM~2.5~, allergens, and reduced transmission of respiratory infections.
+
+There might be concerns about practicality of running portable HEPA filters continuously. Previous studies have shown the adherence might be negatively impacted because of the machine's noise and the perceived cold draft from the machines, especially during winter [@kaviany2021]. Our study implicitly accounts for this, as we have relied on real-world experimental measurements of filter effect that were done in summer and winter across BC [@Barn2008].
+
+The CanOSSEM model provides estimates for PM2.5 in general, with improving accounting for wildfire smoke. This means our results are broadly applicable to all sources of air pollution, and during non-wildfire seasons. Our scenario analyses also showed that continuous operation of the HEPA air filter is more beneficial than turning it on and off daily based on the provincial 24-hour PM~2.5~ ambient air quality objective. <!--# We explored this further in a threshold analysis where we varied the outdoor PM2.5 threshold at which the air filter would be turned on from 0 μg/m3 to 40 μg/m3 (analysis not shown). Lower pollution thresholds resulted in higher QALYs and the best threshold was 0 μg/m3 -->It makes sense for the continuous operation to be the most cost-effective choice from the government's perspective since there is more benefit to reap with no additional cost as the government is only paying for the upfront cost of a rebate. 
+
+Several limitations should be noted. First, the stochastic and hard-to-predict nature of wildfire events prevented us from conducting this analysis prospectively, as long-term prediction of wildfire events in BC with adequate spatial and temporal resolution are not available. Our retrospective results are still useful for future planning, as the frequency and intensity of wildfires in BC is expected to grow, and higher levels of exposure will make the intervention more cost-effective.
+
+Second, retrospective wildfire-related PM~2.5~ concentrations used in this study are based on the results of the CanOSSEM model, and thus subject to limitations and uncertainties of that model.
+
+Third, within the observed PM~2.5~ concentration range of 2.3 μg/m^3^ to 417.3 μg/m^3^, we have assumed a linear dose-response relationship for increased risk of change in asthma control and asthma exacerbations leading to either SCS, ED visit, or hospitalizations.
+
+Lastly, due to a lack of data, we did not evaluate HEPA air filters in subgroups of the population based on sex, age, ethnicity, or social determinants of health, despite their established impact on the burden of the disease[@chowdhury2021; @schröder2015; @karunanayake2020].
+
+# Conclusion
+
+Between 2018 and 2022, offering a 100% rebate on portable HEPA air filters was a cost-effective intervention to reduce short-term asthma complications due to wildfire smoke in Kootenay Boundary but not in other HSDAs in BC. Consumer rebates of up to \$100 (about two-thirds of the cost of the air filter unit) were a cost-effective alternative in most of the province, especially the interior and northern interior parts of the province where wildfire exposure is higher.
+
+# Acknowledgments {.appendix}
+
+We would like to acknowledge that most of the activities of this research project were conducted on the traditional, ancestral, and unceded territory of the Musqueam people.\
+We would like to thank our patient partners for sharing their feedback and insights with us throughout this study. We are also thankful to our knowledge user advisers Dr. Michael Schwandt (Medical Health Officer, Vancouver Coastal Health), Dr. Silvina Mema (Medical Health Officer, Interior Health), Paula Tait (Health & Resource Development Technical Adviser at Northern Health), and Jade Yehia (Environmental Health Policy Lead at BC Ministry of Health). We would like to express our gratitude Dr. Mohsen Sadatsafavi (University of British Columbia) and Dr. Zafar Zafari (University of Maryland) for their help with health economics methods. Lastly, we are very thankful to Dr. Sarah Henderson and Naman Paul (BC Centre for Disease Control) for sharing results of the CanOSSEM model with us. This study was funded by Legacy for Airway Health.
+
+# References {.appendix}
+
+::: {#refs}
+:::
+
+# Appendix: Operation Costs {.appendix}
+
+```{r echo=FALSE, message=FALSE}
+#| label: tbl-operationCost
+#| tbl-cap: Average annual operation cost for patients under different scenarios
+smoke_days_scenario2 <- sf::st_drop_geometry(hsda %>% select(HLTH_SERVICE_DLVR_AREA_NAME, date, smoke)) %>% 
+  mutate(smokey=as.numeric(smoke>=25)) %>%
+  group_by(HLTH_SERVICE_DLVR_AREA_NAME) %>%
+  summarise(smoky_days_BC = sum(smokey)) %>%
+  ungroup()
+
+smoke_days_scenario2 %>%
+
+  mutate(c_basecase        = 50,
+         c_electricity_BC  = round(smoky_days_BC*10/365/5, 2), #divided by number of years, 5
+         c_filter_BC       = (smoky_days_BC/270)*30/5,
+         c_BC              = c_electricity_BC +  c_filter_BC) %>%
+  select(HLTH_SERVICE_DLVR_AREA_NAME, c_basecase, c_BC) %>% #c_WHO) %>%
+  gt() %>%
+  cols_label(
+  HLTH_SERVICE_DLVR_AREA_NAME = html("HSDA"),
+  c_basecase        = html("Base case, Scenario 1"),
+  c_BC              = html("Scenarios 2 and 3"),
+
+  ) %>%
+  fmt_currency(
+    columns = c(c_basecase,
+                c_BC),
+    currency = "CAD")
+
+```
+
+# Appendix: Deterministic Sensitivity Analysis {.appendix}
+
+The following plots show the effect of changing input parameters on overall ICER for each HSDA in each year.
+
+Please refer to the following table for variable names and descriptions:
+
++------------------------+------------------------------------------------------------------------------------------+
+| Name                   | Description                                                                              |
++========================+==========================================================================================+
+| age_init               | Age at the start of the model time horizon                                               |
++------------------------+------------------------------------------------------------------------------------------+
+| r_discount             | Annual discounting of costs and utilities                                                |
++------------------------+------------------------------------------------------------------------------------------+
+| prop_time_at_home      | Average proportion of time spent at home                                                 |
++------------------------+------------------------------------------------------------------------------------------+
+| filter_effect          | The ratio of mean infiltration efficiency with HEPA to without HEPA                      |
++------------------------+------------------------------------------------------------------------------------------+
+| rr_salbutamol          | Risk ratio for increased salbutamol dispensation per 10 µg/m³ increase in PM~2.5~        |
++------------------------+------------------------------------------------------------------------------------------+
+| rr_gp                  | Risk ratio for increased asthma-related physician visit per 10 µg/m³ increase in PM~2.5~ |
++------------------------+------------------------------------------------------------------------------------------+
+| rr_er                  | Risk ratio for asthma related ED visit per 10 µg/m³ increase in PM~2.5~                  |
++------------------------+------------------------------------------------------------------------------------------+
+| rr_hosp                | Risk ratio for asthma related hospitalization per 10 µg/m³ increase in PM~2.5~           |
++------------------------+------------------------------------------------------------------------------------------+
+| rr_sev_exac_unctrl     | Risk ratio for severe exacerbations in uncontrolled asthma vs. well-controlled           |
++------------------------+------------------------------------------------------------------------------------------+
+| rr_sev_exac_part_ctrl  | Risk ratio for severe exacerbations in partly controlled asthma vs. well-controlled      |
++------------------------+------------------------------------------------------------------------------------------+
+| c_asthma_well          | Direct costs of well-controlled asthma, monthly                                          |
++------------------------+------------------------------------------------------------------------------------------+
+| c_asthma_part_ctrl     | Direct costs of partly controlled asthma, monthly                                        |
++------------------------+------------------------------------------------------------------------------------------+
+| c_asthma_unctrl        | Direct costs of uncontrolled asthma, monthly                                             |
++------------------------+------------------------------------------------------------------------------------------+
+| c_exac_scs             | Direct cost of an exacerbation leading to systemic corticosteroid use                    |
++------------------------+------------------------------------------------------------------------------------------+
+| c_exac_er              | Direct cost of an exacerbation leading to emergency visit                                |
++------------------------+------------------------------------------------------------------------------------------+
+| c_exac_hosp            | Direct cost of an exacerbation leading to hospitalization                                |
++------------------------+------------------------------------------------------------------------------------------+
+| c_hepa_unit_list_price | HEPA air filter unit list price                                                          |
++------------------------+------------------------------------------------------------------------------------------+
+| du_exac_scs            | Disutility of exacerbations leading to systemic corticosteroid use, per event            |
++------------------------+------------------------------------------------------------------------------------------+
+| du_exac_er             | Disutility of exacerbations leading to emergency visit, per event                        |
++------------------------+------------------------------------------------------------------------------------------+
+| du_exac_hosp           | Disutility of exacerbations leading to hospitalization, per event                        |
++------------------------+------------------------------------------------------------------------------------------+
+| u_asthma_well          | Utility of controlled asthma, daily                                                      |
++------------------------+------------------------------------------------------------------------------------------+
+| u_asthma_part_ctrl     | Utility of partly controlled asthma, daily                                               |
++------------------------+------------------------------------------------------------------------------------------+
+| u_asthma_unctrl        | Utility of uncontrolled asthma, daily                                                    |
++------------------------+------------------------------------------------------------------------------------------+
+
+: Variable names and descriptions for Deterministic Sensitivity Analysis
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(cowplot)
+require(magick)
+library(purrr)
+dsa_files <- list.files("./dsa", pattern="*.png", full.names=TRUE, recursive = TRUE)
+draw_dsa <- function(urls) {
+  p <- ggdraw() + 
+    draw_image(urls) + 
+    ggtitle(urls)
+  print(p)
+}
+
+walk(dsa_files, draw_dsa)
+
+```

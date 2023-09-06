@@ -1,0 +1,1 @@
+# This file ensures folder is not deleted, which prevents crashing of the run in linux
